@@ -3,9 +3,9 @@
 #include "rpdebug.h"
 #include "string.h"
 #include <errno.h>
+#include <time.h>
 #ifdef OS_MACOSX
 #define NAMED_SEMAPHORE
-#include <time.h>
 #include <unistd.h>
 #include "stdio.h"
 #endif
@@ -47,12 +47,30 @@ RpSemaphore::~RpSemaphore()
 #else
     sem_destroy(semaphore_);
     sem_destroy(valsema_);
+    delete semaphore_;
+    delete valsema_;
 #endif
 }
 
 bool RpSemaphore::TryWait()
 {
     if(sem_trywait(semaphore_) == 0)
+    {
+        sem_wait(valsema_);
+        value_ -= 1;
+        sem_post(valsema_);
+        return true;
+    }
+    return false;
+}
+
+bool RpSemaphore::TimedWait(int milliseconds)
+{
+    struct timespec timeout;
+    time_t now = time(0);
+    timeout.tv_sec = now + milliseconds/1000;
+    timeout.tv_nsec = (milliseconds%1000)*1000000;
+    if(sem_timedwait(semaphore_, &timeout) == 0)
     {
         sem_wait(valsema_);
         value_ -= 1;

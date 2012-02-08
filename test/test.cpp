@@ -18,6 +18,10 @@ public:
         LogStdoutSink* StdoutSink = new LogStdoutSink();
         AddLogSink(StdoutSink);
     };
+    ~TestInitialiser()
+    { 
+        ShutdownLogging();
+    };
 };
 
 TestInitialiser now;

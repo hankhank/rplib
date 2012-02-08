@@ -10,6 +10,11 @@ RpThread::RpThread():
     runlock_ = new RpSemaphore(1);
 }
 
+RpThread::~RpThread()
+{
+    delete runlock_;
+}
+
 void RpThread::Stop()
 {
     runlock_->Wait(); /* Make access running thread safe */

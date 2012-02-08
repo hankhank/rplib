@@ -3,7 +3,6 @@
 
 #include "pthread.h"
 
-
 namespace rp 
 {
     class RpSemaphore;
@@ -12,6 +11,7 @@ namespace rp
     {
     public:
         RpThread();
+        ~RpThread();
 
         void Go(); /* Start the thread */
         void Stop(); /* Stop the thread */

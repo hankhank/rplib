@@ -9,11 +9,15 @@
 namespace rp {
 
     /**
-     * RpMap. Thread safe map of any key type to any value that uses sorted 
-     * lists to store data. Keys must have < operator defined.
+     * @class RpMap. 
+     * @brief Thread safe map of any key type to any value that uses sorted 
+     *        array to store data. Keys must have < operator defined.
+     *
+     * @tparam KEY      Type for the map key
+     * @tparam VALUE    Type of values to be stored in map
+     * @tparam MAP_SIZE Max number of items that can be stored in map. 
+     *                  Allocated at map creation.
      */
-
-    /* Template Definition */
     template <typename KEY,typename VALUE, int MAP_SIZE>
     class RpMap
     {
@@ -21,41 +25,46 @@ namespace rp {
     public:
         RpMap();
         ~RpMap();
-        void Insert(KEY newkey, VALUE newvalue);
-        void Replace(KEY newkey, VALUE newvalue);
+       
+        int Insert(const KEY& newkey, VALUE& newvalue);
+        int Erase(const KEY& newkey);
+
+        int Keys(KEY* keybuf, int size);
+        
+        int Find(const KEY& keytofind);
+        VALUE& Index(int index);
 
         VALUE& operator[](const KEY& key);
         RpMap<KEY,VALUE, MAP_SIZE>& operator= (const RpMap<KEY,VALUE,MAP_SIZE> &x);
-             
-        class pair
+    
+    private:
+        int FindKey(const KEY& key);
+        void PrintArray();
+        void InsertAtIndex(const KEY& newkey, VALUE& newvalue, int index);
+        int EraseAtIndex(int index);
+
+        RpSemaphore *empty_; /**< Empty count*/
+        RpSemaphore *lock_;
+        RpSemaphore *usd_;
+
+        struct pair
         {
-        public:
             KEY key;
             VALUE* value;
         };
-
-    private:
-        int FindKey(KEY key);
-        void InsertAtIndex(KEY newkey, VALUE newvalue, int index);
-        RpSemaphore *empty_;
-        RpSemaphore *lock_;
-        RpSemaphore *usd_;
-        unsigned int head_;
-        unsigned int tail_;
-        pair sortedpairs_[MAP_SIZE];
+        struct pair sortedpairs_[MAP_SIZE];
         VALUE mapvalues_[MAP_SIZE];
         RpBuffer<VALUE> *mapvaluesbuf_;
     };
 
     /* Implementation */
+
     template <typename KEY, typename VALUE, int MAP_SIZE>
     RpMap<KEY, VALUE, MAP_SIZE>::RpMap()
     {
         empty_ =  new RpSemaphore(MAP_SIZE);
         lock_ =  new RpSemaphore(1);
         usd_ =  new RpSemaphore(0);
-        head_ = 0;
-        tail_ = 1;
         mapvaluesbuf_ = new RpBuffer<VALUE>(mapvalues_, MAP_SIZE);
     }  
 
@@ -69,12 +78,17 @@ namespace rp {
     }
     
     /**
-     * Returns the index for the key requested. If the key doesn't exist the index
-     * where the key can be inserted to retain a sorted list is returned.
-     * Not thread safe call.
+     * @brief   Returns the index for the key requested. If the 
+     *          key doesn't exist the index where the key can be 
+     *          inserted to retain a sorted list is returned.
+     *          Not thread safe call.
+     * @param   key Key value to find 
+     * 
+     * @return  Index where the key was found in the underlying 
+     *          array.
      */
     template <typename KEY, typename VALUE, int MAP_SIZE>
-    int RpMap<KEY, VALUE, MAP_SIZE>::FindKey(KEY key)
+    int RpMap<KEY, VALUE, MAP_SIZE>::FindKey(const KEY& key)
     {
         /* Handle empty case */
         int used = usd_->GetValue();
@@ -107,41 +121,58 @@ namespace rp {
     }
 
     /**
-     * Inserts new value at specified index
+     * @brief   Inserts new value at specified index. 
+     *
+     * @param   newkey  The new key to identify the value with.
+     * @param   value   New value to be inserted.
+     * @param   index   Index where in the array to insert
+     *
      */
     template <typename KEY, typename VALUE, int MAP_SIZE>
-    void RpMap<KEY, VALUE, MAP_SIZE>::InsertAtIndex(KEY newkey, 
-                                                    VALUE value,
+    void RpMap<KEY, VALUE, MAP_SIZE>::InsertAtIndex(const KEY& newkey, 
+                                                    VALUE& value,
                                                     int index)
     {
-        LOG(DEBUG) << "Inserting " << newkey << " " << value << "at " << index;
-        memmove(&sortedpairs_[index+1], &sortedpairs_[index+1], sizeof(pair));
+        int used = usd_->GetValue();
+        if(index < (used))
+        {
+            memmove(&(sortedpairs_[index+1]), &(sortedpairs_[index]), 
+                (used-index) * sizeof(struct pair));
+        }
         sortedpairs_[index].key = newkey;
         sortedpairs_[index].value = mapvaluesbuf_->Allocate();
         *(sortedpairs_[index].value) = value;
         usd_->Post();
+        return;
     }
 
     /**
-     * Inserts new key, value pair into the map. If key already exists nothing is 
-     * done.
+     * @brief   Inserts new key, value pair into the map. If key already 
+     *          exists nothing is done.
+     * @param   newkey  Newkey idenify the value.
+     * @param   value   Value to be inserted.
+     *
+     * @return  Index where the item was inserted. < 0 if the value wasn't
+     *          inserted because map was full or key already exsisted.
      */
     template <typename KEY, typename VALUE, int MAP_SIZE>
-    void RpMap<KEY, VALUE, MAP_SIZE>::Insert(KEY newkey, VALUE value)
+    int RpMap<KEY, VALUE, MAP_SIZE>::Insert(const KEY& newkey, VALUE& value)
     {
+        int index = -1;
         if(empty_->TryWait())
         {
             ContextLock cl(lock_);
 
             /* Find insertion point */
             int used = usd_->GetValue();
-            int index = FindKey(newkey);
+            index = FindKey(newkey);
 
             /* Check if insertion point has same key */
-            if(sortedpairs_[index].key == newkey)
+            if((sortedpairs_[index].key == newkey) && 
+                (sortedpairs_[index].value != NULL))
             {
                 LOG(WARNING) << "Key already exists. Nothing added.";
-                return;
+                return -1;
             }
 
             /* Insert new pair and store value*/
@@ -151,20 +182,142 @@ namespace rp {
         {
             /* Map was full. Perhaps we should return a code or something here */
             LOG(ERROR) << "Map is full. Nothing added.";
-            return;
         }
-        return;
+        return index;
     }
 
+    /**
+     * @brief   
+     *
+     * @param   
+     * @param  
+     *
+     * @return  
+     */
+    template <typename KEY, typename VALUE, int MAP_SIZE>
+    int RpMap<KEY, VALUE, MAP_SIZE>::Erase(const KEY& key)
+    {
+        int index = Find(key);
+        if( index < 0 )
+        {
+            return index;
+        }
+        return EraseAtIndex(index);
+    }
+
+    /**
+     * @brief   
+     *
+     * @param   
+     * @param  
+     *
+     * @return  
+     */
+    template <typename KEY, typename VALUE, int MAP_SIZE>
+    int RpMap<KEY, VALUE, MAP_SIZE>::EraseAtIndex(int index)
+    {
+        int used = usd_->GetValue();
+        if( index < used)
+        {
+            mapvaluesbuf_->Release(sortedpairs_[index].value);
+            usd_->TryWait();
+            empty_->Post();
+            memmove(&(sortedpairs_[index]), &(sortedpairs_[index+1]), 
+                (used-index-1) * sizeof(struct pair));
+        }
+        else
+        {
+            LOG(ERROR) << "Index does not exist. No changes to map";
+            index = -1;
+        }
+        return index;
+    }
+
+    /**
+     * @brief   Return a copy of the maps keys into the buf passed 
+     *          in by the caller
+     *
+     * @param   keybuf  Buffer to hold returned keys
+     * @param   size    Number of elements buffer can hold. 
+     *                  Not in bytes.
+     *
+     * @return  Number of keys copied into the buffer.
+     */
+    template <typename KEY, typename VALUE, int MAP_SIZE>
+    int RpMap<KEY, VALUE, MAP_SIZE>::Keys(KEY* keybuf, int size)
+    {
+        ContextLock cl(lock_);
+        int i, used = usd_->GetValue();
+        if( used < size )
+        {
+            size = used;
+        }
+
+        /* Have to use loop as we have an array of structs */
+        for(i = 0; i < size; i++)
+        {
+            keybuf[i] = sortedpairs_[i].key;
+        }
+        return size;
+    }
+
+    /**
+     * @brief   Returns the index for a particular key in map.
+     *
+     * @param   keytofind   Key to find in map.
+     *
+     * @return  Index of key found in map or < 0 if not found.
+     */
+    template <typename KEY, typename VALUE, int MAP_SIZE>
+    int RpMap<KEY, VALUE, MAP_SIZE>::Find(const KEY& keytofind)
+    {
+        ContextLock cl(lock_);
+        int index = FindKey(keytofind);
+        if( keytofind == sortedpairs_[index].key )
+        {
+            return index;
+        }
+        return -1;
+    }
+
+    /**
+     * @brief   Returns the value of map at a particular index.
+     *          Not safe if index outside map is used.
+     *
+     * @param  index    Index of value to return
+     *
+     * @return  Returns requested value
+     */
+    template <typename KEY, typename VALUE, int MAP_SIZE>
+    VALUE& RpMap<KEY, VALUE, MAP_SIZE>::Index(int index)
+    {
+        ContextLock cl(lock_);
+        int used = usd_->GetValue();
+        if( used <= index )
+        {
+            LOG(ERROR) << "Index not in map. return value anyway";
+        }
+        return *(sortedpairs_[index].value);
+    }
+
+    /**
+     * @brief   Map access operator. If key doesn't exsist new item
+     *          using default constructor is added to map.
+     *
+     * @param   key Key of element to add/create
+     *
+     * @return  Value of key returned.
+     *
+     */
     template <typename KEY, typename VALUE, int MAP_SIZE>
     VALUE& RpMap<KEY, VALUE, MAP_SIZE>::operator[](const KEY& key)
     {
         ContextLock cl(lock_);
         int index = FindKey(key);
-        
+        int used = usd_->GetValue();
+
         /* Add if value does not exist */
-        LOG(DEBUG) << "Looking for key " << key;
-        if(sortedpairs_[index].key != key)
+        if((used <= index ) || (sortedpairs_[index].key != key))
         {
             LOG(DEBUG) << "Not found inserting at  " << index;
             VALUE value;
@@ -178,7 +331,6 @@ namespace rp {
                 LOG(ERROR) << "Map is full. Nothing added.";
             }
         }
-
         return *(sortedpairs_[index].value);
     }
 

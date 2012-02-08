@@ -12,6 +12,7 @@ namespace rp
         RpSemaphore(int value);
         ~RpSemaphore();
         bool TryWait();
+        bool TimedWait(int milliseconds);
         void Wait();
         void Post();
         int GetValue();

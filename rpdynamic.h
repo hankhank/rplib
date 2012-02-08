@@ -4,6 +4,7 @@
 #include "rp.h"
 #include "rpdebug.h"
 #include "rpqueue.h"
+#include "rpmap.h"
 
 #include "string.h"
 
@@ -23,6 +24,7 @@
 extern "C" void* RpDynFactory();
 
 #define MAXLOADMODULES 20
+#define RPDYNLIBVERSION 1
 
 namespace rp 
 {
@@ -34,27 +36,33 @@ namespace rp
     {
     public:
         RpLoadable(){};
-        ~RpLoadable(){};
+        virtual ~RpLoadable(){};
         
         /**
          * Init loadable module
          */
-        virtual void _Init();
+        virtual void _Init() = 0;
 
         /**
          * Uninit loadable module
          */
-        virtual void _UnInit();
+        virtual void _UnInit() = 0;
     
         /**
          * Function that returns instance of the loadable class
          */
-        virtual void* _Maker();
+        virtual void* _Maker() = 0;
         
         /**
-         * String containing registration information
+         * RpDynamic library version
          */
-        virtual std::string Reginfo();
+        int _VersionNum() { return RPDYNLIBVERSION;};
+
+        /**
+         * String containing user lib version information
+         */
+        virtual std::string _LibVersionInfo() = 0;
+
     };
 
     /**
@@ -62,8 +70,10 @@ namespace rp
      */
     class RpDynamic
     {
-        enum RpDynamicError { NOERR };
     public:
+
+        enum RpDynamicError { NOERR = 0, FILE_ERR = -1, SYMBOL_ERR = -2 };
+
         RpDynamic();
         ~RpDynamic();
 
@@ -71,12 +81,13 @@ namespace rp
          * Register dynamic library. Collects reginfo, init, uninit & maker function 
          * pointers from new library
          */
-        RpDynamicError Register(std::string libpath);
+        RpDynamicError Register(const std::string libpath);
 
         /**
          */
-        RpDynamicError Release(RpLoadable& module);
-        RpDynamicError Release(std::string libpath);
+        RpDynamicError Release(const std::string& index);
+        RpDynamicError Release(const RpLoadable& module);
+        RpDynamicError Release(const std::string libpath);
         
         /**
          *
@@ -92,10 +103,10 @@ namespace rp
         /**
          * Return list of registered plugins
          */
-        RpQueue<std::string, MAXLOADMODULES> ListLoaded(); 
+        int ListLoaded(std::string* pluginsbuf, int num); 
 
     private:
-        RpQueue<RpLoadable, MAXLOADMODULES> registeredmodules_;
+        RpMap<std::string, RpLoadable*, MAXLOADMODULES> registeredmodules_;
     };
 };
 

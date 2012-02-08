@@ -15,13 +15,15 @@
 #define RPLOG_BASENAME "log"
 #define RPLOG_BASENAME_SIZE sizeof(RPLOG_BASENAME)
 #define MAXLOGSIZE 10 /* size in MB */
+#define MAXSINKS 4
 
 using namespace std;
 using namespace rp;
 
 static bool IsLoggingRunning = false;
 static LogSeverity  RepostLoggingLevel = DEBUG;
-static vector<LogSink*> *LogSinks = NULL;
+/* TODO: Remove vector dependency */
+static LogSink* logsinks[MAXSINKS] = {NULL};
 static bool stop_writing = false;
 
 namespace rp {
@@ -94,16 +96,20 @@ LogMessage::~LogMessage()
 */
 void LogMessage::Flush() 
 {
-    if (!LogSinks || data_->has_been_flushed_ || 
+    int i = 0;
+    if (!logsinks || data_->has_been_flushed_ || 
             data_->severity_ < RepostLoggingLevel) 
     {
         return;
     }
 
-    vector<LogSink*>::iterator sink;
-    for ( sink = LogSinks->begin() ; sink < LogSinks->end(); ++sink )
+    for (; i < MAXSINKS; i++)
     {
-        (*sink)->Send(data_->severity_, stream().str());
+        if( logsinks[i] != NULL)
+        {
+            logsinks[i]->Send(data_->severity_, stream().str());
+        }
+
     }
     data_->has_been_flushed_ = true;
 }
@@ -114,7 +120,6 @@ void rp::InitLogging(void)
     if(IsLoggingRunning == false)
     {
         /* initialisation here */
-        LogSinks = new vector<LogSink*>;
         IsLoggingRunning = true;
 
         /*
@@ -128,7 +133,19 @@ void rp::AddLogSink(LogSink* new_sink)
 {
     if(IsLoggingRunning == true)
     {
-        LogSinks->push_back(new_sink);
+        int i = 0;
+        for(; i < MAXSINKS; i++)
+        {
+            if(logsinks[i] == NULL)
+            {
+                logsinks[i] = new_sink;
+                break;
+            }
+        }
+        if(i == MAXSINKS)
+        {
+            LOG(ERROR) << "Too many sinks. New sink not added";
+        }
     }
 }
 
@@ -137,7 +154,14 @@ void rp::ShutdownLogging(void)
     if(IsLoggingRunning == true)
     {
         LOG(WARNING) << "Logging finished.";
-        LogSinks->clear();
+        int i = 0;
+        for(; i < MAXSINKS; i++)
+        {
+            if(logsinks != NULL)
+            {
+                delete logsinks[i];
+            }
+        }
         IsLoggingRunning = false;
     }
 }

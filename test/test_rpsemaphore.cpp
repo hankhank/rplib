@@ -1,6 +1,7 @@
 #include "catch.hpp"
 #include "rpsemaphore.h"
 #include "rpdebug.h"
+#include <time.h>
 
 using namespace rp;
 
@@ -23,4 +24,15 @@ TEST_CASE("rpcore/rpsemaphore/trywait", "Initialise with value and trywait")
         REQUIRE(sema.GetValue() == i);
     }
     REQUIRE(sema.TryWait() == false);
+}
+
+TEST_CASE("rpcore/rpsemaphore/timedwait", "Initialise with value and timedwait")
+{
+    RpSemaphore sema(0);
+    int timeout = 2124;
+    time_t now = time(0);
+    REQUIRE(sema.TimedWait(timeout) == false);
+    REQUIRE(time(0) == (now + 2))
+    sema.Post();
+    REQUIRE(sema.TimedWait(timeout) == true);
 }
